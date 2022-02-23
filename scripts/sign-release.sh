@@ -29,42 +29,41 @@ set -e
 
 LANG="en"
 
+if [ "X${1}" == "X" ]; then
+  echo "Please supply a version string to sign"
+  exit 1
+fi
+
 ################################################################################
 ## Select a GPG key to use
 
 echo "# Selecting GPG key ..."
 
-gpgkey=$(gpg --list-secret-keys | awk -F'( +|/)' '/^(sec|ssb)/{print $3}')
-keycount=$(echo $gpgkey | wc -w)
+gpgkey=$(gpg --list-secret-keys --keyid-format SHORT | awk -F'( +|/)' '/^(sec|ssb)/{print $3}')
+keycount=$(echo "$gpgkey" | wc -w)
 
-if [ $keycount -eq 0 ]; then
+if [ "$keycount" -eq 0 ]; then
+  # shellcheck disable=SC2016
   echo 'Need at least one GPG key, please make one with `gpg --gen-key`'
   echo 'You will also need to submit your key to a public keyserver, e.g.'
   echo '  https://sks-keyservers.net/i/#submit'
   exit 1
-elif [ $keycount -ne 1 ]; then
-  echo 'You have multiple GPG keys:\n'
+elif [ "$keycount" -ne 1 ]; then
+  printf "You have multiple GPG keys:\n\n"
 
   gpg --list-secret-keys
 
-  while true; do
-    echo $gpgkey | awk '{ for(i = 1; i <= NF; i++) { print i ") " $i; } }'
-    echo -n 'Select a key: '
-    read keynum
-
-    if $(test "$keynum" -eq "$keynum" > /dev/null 2>&1); then
-      _gpgkey=$(echo $gpgkey | awk '{ print $'${keynum}'}')
-      keycount=$(echo $_gpgkey | wc -w)
-      if [ $keycount -eq 1 ]; then
-        echo ""
-        gpgkey=$_gpgkey
-        break
-      fi
-    fi
+  keynum=
+  while [ -z "${keynum##*[!0-9]*}" ] || [ "$keynum" -le 0 ] || [ "$keynum" -gt "$keycount" ]; do
+    echo "$gpgkey" | awk '{ print NR ") " $0; }'
+    printf 'Select a key: '
+    read -r keynum
   done
+  echo ""
+  gpgkey=$(echo "$gpgkey" | sed -n "${keynum}p")
 fi
 
-gpgfing=$(gpg --keyid-format 0xLONG --fingerprint $gpgkey | grep 'Key fingerprint =' | awk -F' = ' '{print $2}' | tr -d ' ')
+gpgfing=$(gpg --keyid-format 0xLONG --fingerprint "$gpgkey" | grep 'Key fingerprint =' | awk -F' = ' '{print $2}' | tr -d ' ')
 
 echo "Using GPG key: $gpgkey"
 echo "  Fingerprint: $gpgfing"
@@ -83,6 +82,7 @@ function sign {
   shafile="SHASUMS256-${version}.txt"
 
   checksumpath="https://github.com/ringo/ringojs/releases/download/v${version}/${shafile}"
+  echo "# Loading $checksumpath"
   curl -sL ${checksumpath} -o ${tmpdir}/${shafile}
 
   echo "# Signing SHASUMS for ${version}..."
@@ -98,12 +98,6 @@ function sign {
 
   echo ""
 }
-
-
-if [ "X${1}" == "X" ]; then
-  echo "Please supply a version string to sign"
-  exit 1
-fi
 
 sign $1
 exit 0
